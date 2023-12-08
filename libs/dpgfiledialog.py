@@ -8,6 +8,7 @@ class dpgDirFileDialog:
         self.width = width
         self.height = height
         self.current_path = os.curdir if (current_path is None or not os.path.exists(current_path)) else current_path
+        self.current_path = os.path.abspath(self.current_path)
         self.font = font
         self.selected_file = None
         self.extensions = [e.upper() for e in extensions]
@@ -66,6 +67,7 @@ class dpgDirFileDialog:
             dpg.add_separator()
             dpg.add_text('Выберите файл:')
             dpg.add_text('', tag='current file')
+            dpg.set_value('current file', self.current_path)
             dpg.add_separator()
             with dpg.group(horizontal=True):
                 dpg.add_text('Диски: ')

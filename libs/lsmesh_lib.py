@@ -731,7 +731,7 @@ class lsdyna_model:
                 rez += '\n\tPart {} consists of {} elements'.format(p, len(s))
         return rez + '\n'
 
-    def save_nodes(self, fname, nShift, mode='a', end=False):
+    def save_nodes(self, fname, nShift=0, mode='a', end=False):
         print('Saving nodes...')
         if not self.nodes:
             return
