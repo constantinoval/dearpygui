@@ -148,8 +148,18 @@ def solve_btn_callback(sender, app_data, user_data):
             x=calculator.dump_t,
             y=calculator.solution_results[0],
         )
+        dpg.configure_item(
+            DPG_WIDGETS.LINE_DEP,
+            x = calculator.dump_t[:-1],
+            y = [
+                (calculator.solution_results[0][i]-calculator.solution_results[0][i-1])/
+                (calculator.dump_t[i]-calculator.dump_t[i-1])
+                for i in range(1, calculator.n_points)
+            ]
+        )
         dpg.fit_axis_data(DPG_WIDGETS.PLOT_MAXEP_X)
         dpg.fit_axis_data(DPG_WIDGETS.PLOT_MAXEP_Y)
+        dpg.fit_axis_data(DPG_WIDGETS.PLOT_DEP_Y)
         calculator.iteration = calculator.iteration + 1
         calculator.correct_material_diagramm()
         dpg.configure_item(DPG_WIDGETS.LINE_DIAG, x=calculator.diag_0[0], y=calculator.diag_0[1])
@@ -175,6 +185,8 @@ def reset_btn_callback(sender, app_data, user_data):
     calculator.iteration = 0
     dpg.configure_item(DPG_WIDGETS.LINE_COMPARE_FORCE_CALC, x=[], y=[])
     dpg.configure_item(DPG_WIDGETS.LINE_MAXEP, x=[], y=[])
+    dpg.configure_item(DPG_WIDGETS.LINE_CONVERGENCE, x=[], y=[])
+    dpg.configure_item(DPG_WIDGETS.LINE_DEP, x=[], y=[])
 
 # end DPG widgets callbasks
 
@@ -316,24 +328,25 @@ with dpg.window(label="Example Window", width=600, height=600, tag='main'):
                     with dpg.plot():
                         dpg.add_plot_axis(dpg.mvXAxis, label='время', tag=DPG_WIDGETS.PLOT_COMPARE_FORCE_X)
                         dpg.add_plot_axis(dpg.mvYAxis, label='сила', tag=DPG_WIDGETS.PLOT_COMPARE_FORCE_Y)
-                        dpg.add_line_series([], [], tag=DPG_WIDGETS.LINE_COMPARE_FORCE_CALC,
+                        dpg.add_line_series(label='calc', x=[], y=[], tag=DPG_WIDGETS.LINE_COMPARE_FORCE_CALC,
                                             parent=DPG_WIDGETS.PLOT_COMPARE_FORCE_Y)
-                        dpg.add_line_series([], [], tag=DPG_WIDGETS.LINE_COMPARE_FORCE_EXP,
+                        dpg.add_line_series(label='exp', x=[], y=[], tag=DPG_WIDGETS.LINE_COMPARE_FORCE_EXP,
                                             parent=DPG_WIDGETS.PLOT_COMPARE_FORCE_Y)
+                        dpg.add_plot_legend()
                     with dpg.plot():
                         dpg.add_plot_axis(dpg.mvXAxis, label='время', tag=DPG_WIDGETS.PLOT_MAXEP_X)
                         dpg.add_plot_axis(dpg.mvYAxis, label='maxep', tag=DPG_WIDGETS.PLOT_MAXEP_Y)
                         dpg.add_plot_axis(dpg.mvYAxis, label='dep', tag=DPG_WIDGETS.PLOT_DEP_Y, no_gridlines=True)
-                        dpg.add_line_series([], [], tag=DPG_WIDGETS.LINE_MAXEP,
+                        dpg.add_line_series(x=[], y=[], label='strain', tag=DPG_WIDGETS.LINE_MAXEP,
                                             parent=DPG_WIDGETS.PLOT_MAXEP_Y)
-                        dpg.add_line_series([], [], tag=DPG_WIDGETS.LINE_DEP,
+                        dpg.add_line_series(x=[], y=[], label='strain rate', tag=DPG_WIDGETS.LINE_DEP,
                                             parent=DPG_WIDGETS.PLOT_DEP_Y)
+                        dpg.add_plot_legend()
                     with dpg.plot():
                         dpg.add_plot_axis(dpg.mvXAxis, label='iteration', tag=DPG_WIDGETS.PLOT_CONVERGENCE_X)
                         dpg.add_plot_axis(dpg.mvYAxis, label='max force error, %', tag=DPG_WIDGETS.PLOT_CONVERGENCE_Y)
                         dpg.add_line_series([], [], tag=DPG_WIDGETS.LINE_CONVERGENCE,
                                             parent=DPG_WIDGETS.PLOT_CONVERGENCE_Y)
-
 
 # Применение стилей и цветов
 with dpg.theme() as global_theme:
@@ -346,8 +359,13 @@ with dpg.theme() as global_theme:
 #         dpg.add_theme_color(dpg.mvPlotCol_PlotBg, (255, 255, 255), category=dpg.mvThemeCat_Plots)
 #         dpg.add_theme_color(dpg.mvPlotCol_XAxisGrid, (0, 0, 0), category=dpg.mvThemeCat_Plots)
 #         dpg.add_theme_color(dpg.mvPlotCol_YAxisGrid, (0, 0, 0), category=dpg.mvThemeCat_Plots)
+with dpg.theme() as line_with_markers:
+    with dpg.theme_component(dpg.mvLineSeries):
+        dpg.add_theme_style(dpg.mvPlotStyleVar_Marker, dpg.mvPlotMarker_Diamond, category=dpg.mvThemeCat_Plots)
+        dpg.add_theme_style(dpg.mvPlotStyleVar_MarkerSize, 7, category=dpg.mvThemeCat_Plots)
 #
 dpg.bind_theme(global_theme)
+dpg.bind_item_theme(DPG_WIDGETS.LINE_CONVERGENCE, line_with_markers)
 #
 # dpg.show_style_editor()
 
