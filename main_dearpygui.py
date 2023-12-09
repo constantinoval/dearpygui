@@ -179,6 +179,14 @@ def solve_btn_callback(sender, app_data, user_data):
         dpg.fit_axis_data(DPG_WIDGETS.PLOT_CONVERGENCE_Y)
         dpg.set_value(DPG_WIDGETS.SOLUTION_PROGRESS, (j+1)/iterations_count)
 
+def run_until_converged(sender, app_data, user_data):
+    crit = dpg.get_value(DPG_WIDGETS.CONVERGENCE_CRIT_INPUT)
+    while True:
+        error = calculator.max_force_error
+        if error and error <= crit:
+            return
+        solve_btn_callback(sender, app_data, 1)
+
 def iteration_count_changed(sender, app_data, user_data):
     dpg.configure_item(DPG_WIDGETS.RUN_N_ITERATIONS_BTN, label=f'Выполнить {app_data} итераций')
     dpg.set_item_user_data(DPG_WIDGETS.RUN_N_ITERATIONS_BTN, app_data)
@@ -323,6 +331,9 @@ with dpg.window(label="Example Window", width=600, height=600, tag='main'):
                         dpg.add_input_int(label='N', default_value=1, tag=DPG_WIDGETS.ITERATIONS_COUNT_INPUT,
                                           callback=iteration_count_changed, width=-1)
                         dpg.add_button(label="Сброс", callback=reset_btn_callback, width=-1)
+                with dpg.group(horizontal=True):
+                    dpg.add_button(label='Считать до совпадения с точностью', callback=run_until_converged)
+                    dpg.add_input_int(label='%', default_value=5, width=150, tag=DPG_WIDGETS.CONVERGENCE_CRIT_INPUT)
                 dpg.add_progress_bar(tag=DPG_WIDGETS.SOLUTION_PROGRESS, width=-1, height=20)
                 # with dpg.child_window(height=610):
                 with dpg.subplots(2, 2, width=-1, height=-1):

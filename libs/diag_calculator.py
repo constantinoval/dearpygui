@@ -52,6 +52,7 @@ class TrueDiagrammCalculator:
         self._iteration = value
         if value==0:
             self.assign_initial_diag()
+            self.solution_results = []
 
     @property
     def working_dir(self):
