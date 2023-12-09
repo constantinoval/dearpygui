@@ -56,12 +56,12 @@ def set_model_text_callback(file_name):
 
 
 def chose_model_btn_callback(sender, app_data, user_data):
-    fd = dpgDirFileDialog(extensions=['k', 'dyn'], height=510, callback=set_model_text_callback)
+    fd = dpgDirFileDialog(extensions=['k', 'dyn'], height=590, callback=set_model_text_callback)
     fd.show()
 
 
 def chose_expdata_btn_callback(sender, app_data, user_data):
-    fd = dpgDirFileDialog(extensions=['txt', 'csv'], height=510, callback=load_experimental_curves)
+    fd = dpgDirFileDialog(extensions=['txt', 'csv'], height=590, callback=load_experimental_curves)
     fd.show()
 
 
@@ -90,7 +90,7 @@ def set_solver_path(file_name):
 
 
 def choose_solver_btn_callback(sender, app_data, user_data):
-    fd = dpgDirFileDialog(extensions=['exe'], callback=set_solver_path, height=510)
+    fd = dpgDirFileDialog(extensions=['exe'], callback=set_solver_path, height=590)
     fd.show()
 
 def set_workingdir(file_name):
@@ -102,11 +102,12 @@ def set_workingdir(file_name):
     dpg.set_value(DPG_WIDGETS.WORK_DIR, file_name)
 
 def choose_workingdir_btn_callback(sender, app_data, user_data):
-    fd = dpgDirFileDialog(dir_mode=True, callback=set_workingdir, height=510)
+    fd = dpgDirFileDialog(dir_mode=True, callback=set_workingdir, height=590)
     fd.show()
 
 def solve_btn_callback(sender, app_data, user_data):
     iterations_count = 1 if user_data is None else user_data
+    dpg.set_value(DPG_WIDGETS.SOLUTION_PROGRESS, 0)
     for j in range(iterations_count):
         if calculator.iteration == 0:
             calculator.working_dir = dpg.get_value(DPG_WIDGETS.WORK_DIR)
@@ -129,12 +130,18 @@ def solve_btn_callback(sender, app_data, user_data):
             )
             dpg.fit_axis_data(DPG_WIDGETS.PLOT_COMPARE_FORCE_X)
             dpg.fit_axis_data(DPG_WIDGETS.PLOT_COMPARE_FORCE_Y)
+        if calculator.iteration != 0:
+            calculator.correct_material_diagramm()
+            dpg.configure_item(DPG_WIDGETS.LINE_DIAG, x=calculator.diag_0[0], y=calculator.diag_0[1])
+            dpg.fit_axis_data(DPG_WIDGETS.PLOT_DIAG_X)
+            dpg.fit_axis_data(DPG_WIDGETS.PLOT_DIAG_Y)
 
-        dpg.configure_item(DPG_WIDGETS.LINE_DIAG, x=calculator.diag_0[0], y=calculator.diag_0[1])
+
+        dpg.configure_item(DPG_WIDGETS.LINE_DIAG, x=calculator.strain, y=calculator.stress)
         dpg.fit_axis_data(DPG_WIDGETS.PLOT_DIAG_X)
         dpg.fit_axis_data(DPG_WIDGETS.PLOT_DIAG_Y)
         calculator.save_variable_part()
-        calculator.run_calculation()
+        calculator.run_calculation(ncpus=dpg.get_value(DPG_WIDGETS.NUM_CPUS_INPUT))
         calculator.proc_solution_results()
         dpg.configure_item(
             DPG_WIDGETS.LINE_COMPARE_FORCE_CALC,
@@ -161,19 +168,16 @@ def solve_btn_callback(sender, app_data, user_data):
         dpg.fit_axis_data(DPG_WIDGETS.PLOT_MAXEP_Y)
         dpg.fit_axis_data(DPG_WIDGETS.PLOT_DEP_Y)
         calculator.iteration = calculator.iteration + 1
-        calculator.correct_material_diagramm()
-        dpg.configure_item(DPG_WIDGETS.LINE_DIAG, x=calculator.diag_0[0], y=calculator.diag_0[1])
-        dpg.fit_axis_data(DPG_WIDGETS.PLOT_DIAG_X)
-        dpg.fit_axis_data(DPG_WIDGETS.PLOT_DIAG_Y)
         dpg.set_value(DPG_WIDGETS.ITERATIONS_COUNT_TEXT,
                       f'Выполнено {calculator.iteration} итераций')
         data = dpg.get_value(DPG_WIDGETS.LINE_CONVERGENCE)
         dpg.configure_item(DPG_WIDGETS.LINE_CONVERGENCE,
                            x = data[0] + [calculator.iteration],
-                           y = data[1] + [calculator.max_force_deflection]
+                           y = data[1] + [calculator.max_force_error]
                            )
         dpg.fit_axis_data(DPG_WIDGETS.PLOT_CONVERGENCE_X)
         dpg.fit_axis_data(DPG_WIDGETS.PLOT_CONVERGENCE_Y)
+        dpg.set_value(DPG_WIDGETS.SOLUTION_PROGRESS, (j+1)/iterations_count)
 
 def iteration_count_changed(sender, app_data, user_data):
     dpg.configure_item(DPG_WIDGETS.RUN_N_ITERATIONS_BTN, label=f'Выполнить {app_data} итераций')
@@ -190,12 +194,8 @@ def reset_btn_callback(sender, app_data, user_data):
 
 # end DPG widgets callbasks
 
-# Настройка кириллического шрифта
+
 dpg.create_context()
-with dpg.font_registry():
-    with dpg.font(file="./XO_Caliburn_Nu.ttf", size=18) as font1:
-        dpg.add_font_range_hint(dpg.mvFontRangeHint_Cyrillic)
-dpg.bind_font(font1)
 dpg.create_viewport(title="Numerical true stress strain diagramm determination",
                     width=WINDOW_WIDTH, height=WINDOW_HEIGHT)
 dpg.setup_dearpygui()
@@ -205,127 +205,133 @@ with dpg.window(label="Example Window", width=600, height=600, tag='main'):
     with dpg.menu_bar():
         with dpg.menu(label="File"):
             dpg.add_menu_item(label='Save')
-    # Блок виджетов выбора базовой модели
-    with dpg.collapsing_header(label="Базовая модель"):
-        with dpg.child_window(height=490):
-            with dpg.child_window(height=130):
-                dpg.add_text("""Описание требований к расчетной модели""")
-            with dpg.child_window(height=40):
+    with dpg.tab_bar():
+        # Блок виджетов выбора базовой модели
+        with dpg.tab(label="Базовая модель"):
+            with dpg.child_window(height=-1):
+                with dpg.child_window(height=130):
+                    dpg.add_text("""Описание требований к расчетной модели""")
+                with dpg.child_window(height=60):
+                    with dpg.group(horizontal=True):
+                        dpg.add_text("Путь к файлу модели:")
+                        dpg.add_input_text(readonly=True, tag=DPG_WIDGETS.MODEL_PATH_TEXT, width=-110)
+                        dpg.add_button(label="Открыть", width=100, callback=chose_model_btn_callback)
                 with dpg.group(horizontal=True):
-                    dpg.add_text("Путь к файлу модели:")
-                    dpg.add_input_text(readonly=True, tag=DPG_WIDGETS.MODEL_PATH_TEXT, width=-100)
-                    dpg.add_button(label="Открыть", width=100, callback=chose_model_btn_callback)
-            with dpg.group(horizontal=True):
-                with dpg.drawlist(width=MESH_DRAW_AREA_WIDTH, height=MESH_DRAW_AREA_HEIGH):
-                    with dpg.draw_layer(tag=DPG_WIDGETS.MESH_DRAW_BACKGROUND):
-                        dpg.draw_rectangle(
-                            pmin=(0, 0),
-                            pmax=(MESH_DRAW_AREA_WIDTH, MESH_DRAW_AREA_HEIGH),
-                            fill=(255, 255, 255)
-                        )
-                    with dpg.draw_layer(tag=DPG_WIDGETS.MESH_DRAW_LAYER):
-                        pass
-                with dpg.child_window():
-                    dpg.add_text("", tag=DPG_WIDGETS.MODEL_INFO_TEXT)
-                    
-    # Блок работы с экспериментальными кривыми
-    with dpg.collapsing_header(label='Экспериментальные кривые'):
-        with dpg.child_window(height=510):
-            with dpg.child_window(height=130):
-                dpg.add_text("""Описание требований к файлу с экспериментальными кривыми""")
-            with dpg.child_window(height=40):
-                with dpg.group(horizontal=True):
-                    dpg.add_text("Путь к файлу данных:")
-                    dpg.add_input_text(readonly=True, tag=DPG_WIDGETS.EXP_DATA_PATH, width=-100)
-                    dpg.add_button(label="Открыть", width=100, callback=chose_expdata_btn_callback)
-            with dpg.child_window(height=310):
+                    with dpg.drawlist(width=MESH_DRAW_AREA_WIDTH, height=MESH_DRAW_AREA_HEIGH):
+                        with dpg.draw_layer(tag=DPG_WIDGETS.MESH_DRAW_BACKGROUND):
+                            dpg.draw_rectangle(
+                                pmin=(0, 0),
+                                pmax=(MESH_DRAW_AREA_WIDTH, MESH_DRAW_AREA_HEIGH),
+                                fill=(255, 255, 255)
+                            )
+                        with dpg.draw_layer(tag=DPG_WIDGETS.MESH_DRAW_LAYER):
+                            pass
+                    with dpg.child_window(height=-1):
+                        dpg.add_text("", tag=DPG_WIDGETS.MODEL_INFO_TEXT)
+
+        # Блок работы с экспериментальными кривыми
+        with dpg.tab(label='Экспериментальные кривые'):
+            with dpg.child_window(height=-1):
+                with dpg.child_window(height=130):
+                    dpg.add_text("""Описание требований к файлу с экспериментальными кривыми""")
+                with dpg.child_window(height=60):
+                    with dpg.group(horizontal=True):
+                        dpg.add_text("Путь к файлу данных:")
+                        dpg.add_input_text(readonly=True, tag=DPG_WIDGETS.EXP_DATA_PATH, width=-110)
+                        dpg.add_button(label="Открыть", width=100, callback=chose_expdata_btn_callback)
+                # with dpg.child_window(height=310):
                 with dpg.subplots(1, 2, width=-1, height=-1, link_all_x=True):
-                    with dpg.plot():
+                    with dpg.plot(anti_aliased=True):
                         dpg.add_plot_axis(dpg.mvXAxis, label='время', tag=DPG_WIDGETS.PLOT_EXP_V_X)
                         dpg.add_plot_axis(dpg.mvYAxis, label='скорость', tag=DPG_WIDGETS.PLOT_EXP_V_Y)
                         dpg.add_line_series([0, 100], [0, 0], tag=DPG_WIDGETS.EXP_V_PLOT,
                                             parent=DPG_WIDGETS.PLOT_EXP_V_Y)
-                    with dpg.plot():
+                    with dpg.plot(anti_aliased=True):
                         dpg.add_plot_axis(dpg.mvXAxis, label='время', tag=DPG_WIDGETS.PLOT_EXP_F_X)
                         dpg.add_plot_axis(dpg.mvYAxis, label='сила', tag=DPG_WIDGETS.PLOT_EXP_F_Y)
                         dpg.add_line_series([0, 100], [0, 0], tag=DPG_WIDGETS.EXP_F_PLOT,
                                             parent=DPG_WIDGETS.PLOT_EXP_F_Y)
-                        
-    # Блок настройки решения
-    with dpg.collapsing_header(label='Настройки решения'):
-        with dpg.child_window(height=370):
-            with dpg.child_window(height=40):
-                with dpg.group(horizontal=True):
-                    dpg.add_text("Путь к решателю:")
-                    dpg.add_input_text(readonly=True, tag=DPG_WIDGETS.SOLVER_PATH, width=-100,
-                                       default_value='run_dyna')
-                    dpg.add_button(label="Открыть", width=100, callback=choose_solver_btn_callback)
-            with dpg.child_window(height=40):
-                with dpg.group(horizontal=True):
-                    dpg.add_text("Рабочая директория:")
-                    dpg.add_input_text(readonly=True, tag=DPG_WIDGETS.WORK_DIR, width=-100)
-                    dpg.add_button(label="Открыть", width=100, callback=choose_workingdir_btn_callback)
-            with dpg.child_window(height=130):
-                dpg.add_text("Начальное приближение модели")
+
+        # Блок настройки решения
+        with dpg.tab(label='Настройки решения'):
+            with dpg.child_window(height=-1):
+                with dpg.child_window(height=100):
+                    with dpg.group(horizontal=True):
+                        dpg.add_text("Путь к решателю:")
+                        dpg.add_input_text(readonly=True, tag=DPG_WIDGETS.SOLVER_PATH, width=-110,
+                                           default_value='run_dyna')
+                        dpg.add_button(label="Открыть", width=100, callback=choose_solver_btn_callback)
+                    with dpg.group(horizontal=True):
+                        dpg.add_text("Число параллельных потоков: ")
+                        dpg.add_input_int(tag=DPG_WIDGETS.NUM_CPUS_INPUT, default_value=4, width=150, min_value=1,
+                                          min_clamped=True)
+                with dpg.child_window(height=60):
+                    with dpg.group(horizontal=True):
+                        dpg.add_text("Рабочая директория:")
+                        dpg.add_input_text(readonly=True, tag=DPG_WIDGETS.WORK_DIR, width=-110)
+                        dpg.add_button(label="Открыть", width=100, callback=choose_workingdir_btn_callback)
+                with dpg.child_window(height=190):
+                    dpg.add_text("Начальное приближение модели")
+                    with dpg.table(header_row=False):
+                        dpg.add_table_column()
+                        dpg.add_table_column()
+                        dpg.add_table_column()
+                        dpg.add_table_column()
+                        with dpg.table_row():
+                            dpg.add_text("плотность")
+                            dpg.add_input_float(default_value=7e-3, width=-1,
+                                                tag=DPG_WIDGETS.MAT_RHO_INPUT)
+                        with dpg.table_row():
+                            dpg.add_text("модуль Юнга")
+                            dpg.add_input_float(default_value=200000, width=-1,
+                                                tag = DPG_WIDGETS.MAT_E_INPUT)
+                            dpg.add_text("коэффициент Пуассона")
+                            dpg.add_input_float(default_value=0.28, width=-1,
+                                                tag=DPG_WIDGETS.MAT_NU_INPUT)
+                        with dpg.table_row():
+                            dpg.add_text("предел текучести")
+                            dpg.add_input_float(default_value=200, width=-1,
+                                                tag=DPG_WIDGETS.MAT_S0_INPUT)
+                            dpg.add_text("касательный модуль")
+                            dpg.add_input_float(default_value=1000, width=-1,
+                                                tag=DPG_WIDGETS.MAT_ET_INPUT)
+                with dpg.child_window(height=60):
+                    with dpg.group(horizontal=True):
+                        dpg.add_text("Число точек на кривой деформирования:")
+                        dpg.add_input_int(default_value=50, tag=DPG_WIDGETS.NUM_POINTS_INPUT, width=-1,
+                                           min_value=10, max_value=1000)
+                with dpg.child_window(height=100):
+                    dpg.add_text('Тип задачи:')
+                    dpg.add_radio_button(
+                        items=['Осесимметричная', 'Плоская', 'Трехмерная'],
+                        horizontal=True,
+                        tag=DPG_WIDGETS.TASK_TYPE,
+                    )
+
+        # Блок настройки решения
+        with dpg.tab(label='Решение'):
+            with dpg.child_window(height=-1):
                 with dpg.table(header_row=False):
                     dpg.add_table_column()
                     dpg.add_table_column()
                     dpg.add_table_column()
                     dpg.add_table_column()
                     with dpg.table_row():
-                        dpg.add_text("плотность")
-                        dpg.add_input_float(default_value=7e-3, width=-1,
-                                            tag=DPG_WIDGETS.MAT_RHO_INPUT)
-                    with dpg.table_row():
-                        dpg.add_text("модуль Юнга")
-                        dpg.add_input_float(default_value=200000, width=-1,
-                                            tag = DPG_WIDGETS.MAT_E_INPUT)
-                        dpg.add_text("коэффициент Пуассона")
-                        dpg.add_input_float(default_value=0.28, width=-1,
-                                            tag=DPG_WIDGETS.MAT_NU_INPUT)
-                    with dpg.table_row():
-                        dpg.add_text("предел текучести")
-                        dpg.add_input_float(default_value=200, width=-1,
-                                            tag=DPG_WIDGETS.MAT_S0_INPUT)
-                        dpg.add_text("касательный модуль")
-                        dpg.add_input_float(default_value=1000, width=-1,
-                                            tag=DPG_WIDGETS.MAT_ET_INPUT)
-            with dpg.child_window(height=40):
-                with dpg.group(horizontal=True):
-                    dpg.add_text("Число точек на кривой деформирования:")
-                    dpg.add_input_int(default_value=50, tag=DPG_WIDGETS.NUM_POINTS_INPUT, width=-1,
-                                       min_value=10, max_value=1000)
-            with dpg.child_window(height=80):
-                dpg.add_text('Тип задачи:')
-                dpg.add_radio_button(
-                    items=['Осесимметричная', 'Плоская', 'Трехмерная'],
-                    horizontal=True,
-                    tag=DPG_WIDGETS.TASK_TYPE,
-                )
-
-    # Блок настройки решения
-    with dpg.collapsing_header(label='Решение'):
-        with dpg.child_window(height=680):
-            with dpg.table(header_row=False):
-                dpg.add_table_column()
-                dpg.add_table_column()
-                dpg.add_table_column()
-                dpg.add_table_column()
-                with dpg.table_row():
-                    dpg.add_text(default_value='Выполено итераций: 0', tag=DPG_WIDGETS.ITERATIONS_COUNT_TEXT)
-                    dpg.add_button(label="Выполнить 1 итераций", user_data=1, callback=solve_btn_callback,
-                                   tag=DPG_WIDGETS.RUN_N_ITERATIONS_BTN, width=-1)
-                    dpg.add_input_int(label='N', default_value=1, tag=DPG_WIDGETS.ITERATIONS_COUNT_INPUT,
-                                      callback=iteration_count_changed, width=-1)
-                    dpg.add_button(label="Сброс", callback=reset_btn_callback, width=-1)
-            with dpg.child_window(height=610):
+                        dpg.add_text(default_value='Выполено итераций: 0', tag=DPG_WIDGETS.ITERATIONS_COUNT_TEXT)
+                        dpg.add_button(label="Выполнить 1 итераций", user_data=1, callback=solve_btn_callback,
+                                       tag=DPG_WIDGETS.RUN_N_ITERATIONS_BTN, width=-1)
+                        dpg.add_input_int(label='N', default_value=1, tag=DPG_WIDGETS.ITERATIONS_COUNT_INPUT,
+                                          callback=iteration_count_changed, width=-1)
+                        dpg.add_button(label="Сброс", callback=reset_btn_callback, width=-1)
+                dpg.add_progress_bar(tag=DPG_WIDGETS.SOLUTION_PROGRESS, width=-1, height=20)
+                # with dpg.child_window(height=610):
                 with dpg.subplots(2, 2, width=-1, height=-1):
-                    with dpg.plot():
+                    with dpg.plot(anti_aliased=True):
                         dpg.add_plot_axis(dpg.mvXAxis, label='ep', tag=DPG_WIDGETS.PLOT_DIAG_X)
                         dpg.add_plot_axis(dpg.mvYAxis, label='s', tag=DPG_WIDGETS.PLOT_DIAG_Y)
                         dpg.add_line_series([], [], tag=DPG_WIDGETS.LINE_DIAG,
                                             parent=DPG_WIDGETS.PLOT_DIAG_Y)
-                    with dpg.plot():
+                    with dpg.plot(anti_aliased=True):
                         dpg.add_plot_axis(dpg.mvXAxis, label='время', tag=DPG_WIDGETS.PLOT_COMPARE_FORCE_X)
                         dpg.add_plot_axis(dpg.mvYAxis, label='сила', tag=DPG_WIDGETS.PLOT_COMPARE_FORCE_Y)
                         dpg.add_line_series(label='calc', x=[], y=[], tag=DPG_WIDGETS.LINE_COMPARE_FORCE_CALC,
@@ -333,7 +339,7 @@ with dpg.window(label="Example Window", width=600, height=600, tag='main'):
                         dpg.add_line_series(label='exp', x=[], y=[], tag=DPG_WIDGETS.LINE_COMPARE_FORCE_EXP,
                                             parent=DPG_WIDGETS.PLOT_COMPARE_FORCE_Y)
                         dpg.add_plot_legend()
-                    with dpg.plot():
+                    with dpg.plot(anti_aliased=True):
                         dpg.add_plot_axis(dpg.mvXAxis, label='время', tag=DPG_WIDGETS.PLOT_MAXEP_X)
                         dpg.add_plot_axis(dpg.mvYAxis, label='maxep', tag=DPG_WIDGETS.PLOT_MAXEP_Y)
                         dpg.add_plot_axis(dpg.mvYAxis, label='dep', tag=DPG_WIDGETS.PLOT_DEP_Y, no_gridlines=True)
@@ -342,23 +348,35 @@ with dpg.window(label="Example Window", width=600, height=600, tag='main'):
                         dpg.add_line_series(x=[], y=[], label='strain rate', tag=DPG_WIDGETS.LINE_DEP,
                                             parent=DPG_WIDGETS.PLOT_DEP_Y)
                         dpg.add_plot_legend()
-                    with dpg.plot():
+                    with dpg.plot(anti_aliased=True):
                         dpg.add_plot_axis(dpg.mvXAxis, label='iteration', tag=DPG_WIDGETS.PLOT_CONVERGENCE_X)
                         dpg.add_plot_axis(dpg.mvYAxis, label='max force error, %', tag=DPG_WIDGETS.PLOT_CONVERGENCE_Y)
                         dpg.add_line_series([], [], tag=DPG_WIDGETS.LINE_CONVERGENCE,
                                             parent=DPG_WIDGETS.PLOT_CONVERGENCE_Y)
 
+# Настройка кириллического шрифта
+with dpg.font_registry():
+    with dpg.font(file="./XO_Caliburn_Nu.ttf", size=18) as font1:
+        dpg.add_font_range_hint(dpg.mvFontRangeHint_Cyrillic)
+dpg.bind_font(font1)
+
 # Применение стилей и цветов
 with dpg.theme() as global_theme:
+    with dpg.theme_component(dpg.mvAll):
+        dpg.add_theme_style(dpg.mvStyleVar_FramePadding, x=20, y=10)
+        dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, x=5)
     #     with dpg.theme_component(dpg.mvAll):
     #         dpg.add_theme_color(dpg.mvThemeCol_WindowBg, (100, 100, 100))
     #         dpg.add_theme_color(dpg.mvThemeCol_ChildBg, (120, 100, 100))
     with dpg.theme_component(dpg.mvPlot):
         dpg.add_theme_style(dpg.mvPlotStyleVar_PlotPadding, x=10, y=10, category=dpg.mvThemeCat_Plots)
         dpg.add_theme_style(dpg.mvPlotStyleVar_LineWeight, 2, category=dpg.mvThemeCat_Plots)
+        # dpg.add_theme_style(dpg.mv)
+
 #         dpg.add_theme_color(dpg.mvPlotCol_PlotBg, (255, 255, 255), category=dpg.mvThemeCat_Plots)
 #         dpg.add_theme_color(dpg.mvPlotCol_XAxisGrid, (0, 0, 0), category=dpg.mvThemeCat_Plots)
 #         dpg.add_theme_color(dpg.mvPlotCol_YAxisGrid, (0, 0, 0), category=dpg.mvThemeCat_Plots)
+
 with dpg.theme() as line_with_markers:
     with dpg.theme_component(dpg.mvLineSeries):
         dpg.add_theme_style(dpg.mvPlotStyleVar_Marker, dpg.mvPlotMarker_Diamond, category=dpg.mvThemeCat_Plots)
@@ -368,7 +386,7 @@ dpg.bind_theme(global_theme)
 dpg.bind_item_theme(DPG_WIDGETS.LINE_CONVERGENCE, line_with_markers)
 #
 # dpg.show_style_editor()
-
+# dpg.show_debug()
 dpg.show_viewport()
 dpg.set_primary_window('main', True)
 dpg.start_dearpygui()

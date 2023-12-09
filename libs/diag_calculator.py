@@ -36,7 +36,7 @@ class TrueDiagrammCalculator:
         self.model_type = '2d'
         # результаты решения: [макс.пласт.деф: list[float], силы реакции: list[float]]
         self.solution_results: list = []
-        self.max_force_deflection = 1e6
+        # self.max_force_deflection = 1e6
 
     @property
     def iteration(self):
@@ -307,10 +307,16 @@ $#                a1                  o1
             np.interp(self.dump_t, times2, forces),
         ]
 
+    @property
+    def max_force_error(self):
+        if not self.solution_results:
+            return
+        f_exp = np.interp(self.dump_t, self.exp_curves[0], self.exp_curves[2])
+        return np.abs((f_exp[1:]-self.solution_results[1][1:])/f_exp[1:]).max()*100
+
     def correct_material_diagramm(self):
         st = np.interp(self.solution_results[0], self.diag_0[0], self.diag_0[1])
         f_exp = np.interp(self.dump_t, self.exp_curves[0], self.exp_curves[2])
-        self.max_force_deflection = np.abs((f_exp[1:]-self.solution_results[1][1:])/f_exp[1:]).max()*100
         self.diag_0 = [[0], [1]]
         for i in range(1, self.n_points):
             self.diag_0[0].append(self.solution_results[0][i])
@@ -334,6 +340,18 @@ $#                a1                  o1
         except Exception:
             print('Не удалось посчитать. Проверьте папку проекта.')
 
+    @property
+    def strain(self):
+        if not self.diag_0:
+            return []
+        ee = self.diag_0[0][0]/self.E
+        return [0] + [ep+ee for ep in self.diag_0[0]]
+
+    @property
+    def stress(self):
+        if not self.diag_0:
+            return []
+        return [0] + list(self.diag_0[1])
 
 if __name__=='__main__':
     calc = TrueDiagrammCalculator()
