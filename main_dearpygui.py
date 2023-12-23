@@ -4,8 +4,11 @@ from libs.lsmesh_lib import boundBox, lsdyna_model
 import os
 from constants import *
 from libs.diag_calculator import TrueDiagrammCalculator
+from libs.mesh_drawer import MeshDrawer
+import threading
 
 calculator = TrueDiagrammCalculator()
+running = True
 
 # DPG widgets callbacks
 def draw_mesh(calculator: TrueDiagrammCalculator, dpg_draw_layer_tag: str):
@@ -56,12 +59,12 @@ def set_model_text_callback(file_name):
 
 
 def chose_model_btn_callback(sender, app_data, user_data):
-    fd = dpgDirFileDialog(extensions=['k', 'dyn'], height=590, callback=set_model_text_callback)
+    fd = dpgDirFileDialog(extensions=['k', 'dyn'], height=600, callback=set_model_text_callback)
     fd.show()
 
 
 def chose_expdata_btn_callback(sender, app_data, user_data):
-    fd = dpgDirFileDialog(extensions=['txt', 'csv'], height=590, callback=load_experimental_curves)
+    fd = dpgDirFileDialog(extensions=['txt', 'csv'], height=600, callback=load_experimental_curves)
     fd.show()
 
 
@@ -179,13 +182,20 @@ def solve_btn_callback(sender, app_data, user_data):
         dpg.fit_axis_data(DPG_WIDGETS.PLOT_CONVERGENCE_Y)
         dpg.set_value(DPG_WIDGETS.SOLUTION_PROGRESS, (j+1)/iterations_count)
 
-def run_until_converged(sender, app_data, user_data):
+def run_solution_until_converged():
     crit = dpg.get_value(DPG_WIDGETS.CONVERGENCE_CRIT_INPUT)
-    while True:
+    while running:
         error = calculator.max_force_error
         if error and error <= crit:
             return
-        solve_btn_callback(sender, app_data, 1)
+        solve_btn_callback(None, None, 1)
+
+def run_until_converged(sender, app_data, user_data):
+    global running
+    running = True
+    t = threading.Thread(target=run_solution_until_converged, args=(), daemon=True)
+    t.start()
+    
 
 def iteration_count_changed(sender, app_data, user_data):
     dpg.configure_item(DPG_WIDGETS.RUN_N_ITERATIONS_BTN, label=f'Выполнить {app_data} итераций')
@@ -200,6 +210,9 @@ def reset_btn_callback(sender, app_data, user_data):
     dpg.configure_item(DPG_WIDGETS.LINE_CONVERGENCE, x=[], y=[])
     dpg.configure_item(DPG_WIDGETS.LINE_DEP, x=[], y=[])
 
+def stop_button_callback(sender, app_data, user_data):
+    global running
+    running = False
 # end DPG widgets callbasks
 
 
@@ -216,26 +229,54 @@ with dpg.window(label="Example Window", width=600, height=600, tag='main'):
     with dpg.tab_bar():
         # Блок виджетов выбора базовой модели
         with dpg.tab(label="Базовая модель"):
-            with dpg.child_window(height=-1):
-                with dpg.child_window(height=130):
-                    dpg.add_text("""Описание требований к расчетной модели""")
-                with dpg.child_window(height=60):
-                    with dpg.group(horizontal=True):
-                        dpg.add_text("Путь к файлу модели:")
-                        dpg.add_input_text(readonly=True, tag=DPG_WIDGETS.MODEL_PATH_TEXT, width=-110)
-                        dpg.add_button(label="Открыть", width=100, callback=chose_model_btn_callback)
-                with dpg.group(horizontal=True):
-                    with dpg.drawlist(width=MESH_DRAW_AREA_WIDTH, height=MESH_DRAW_AREA_HEIGH):
-                        with dpg.draw_layer(tag=DPG_WIDGETS.MESH_DRAW_BACKGROUND):
-                            dpg.draw_rectangle(
-                                pmin=(0, 0),
-                                pmax=(MESH_DRAW_AREA_WIDTH, MESH_DRAW_AREA_HEIGH),
-                                fill=(255, 255, 255)
-                            )
-                        with dpg.draw_layer(tag=DPG_WIDGETS.MESH_DRAW_LAYER):
-                            pass
+            with dpg.tab_bar():
+                with dpg.tab(label='Открыть'):
                     with dpg.child_window(height=-1):
-                        dpg.add_text("", tag=DPG_WIDGETS.MODEL_INFO_TEXT)
+                        with dpg.child_window(height=130):
+                            dpg.add_text("""Описание требований к расчетной модели""")
+                        with dpg.child_window(height=60):
+                            with dpg.group(horizontal=True):
+                                dpg.add_text("Путь к файлу модели:")
+                                dpg.add_input_text(readonly=True, tag=DPG_WIDGETS.MODEL_PATH_TEXT, width=-110)
+                                dpg.add_button(label="Открыть", width=100, callback=chose_model_btn_callback)
+                        with dpg.group(horizontal=True):
+                            with dpg.drawlist(width=MESH_DRAW_AREA_WIDTH, height=MESH_DRAW_AREA_HEIGH):
+                                with dpg.draw_layer(tag=DPG_WIDGETS.MESH_DRAW_BACKGROUND):
+                                    dpg.draw_rectangle(
+                                        pmin=(0, 0),
+                                        pmax=(MESH_DRAW_AREA_WIDTH, MESH_DRAW_AREA_HEIGH),
+                                        fill=(255, 255, 255)
+                                    )
+                                with dpg.draw_layer(tag=DPG_WIDGETS.MESH_DRAW_LAYER):
+                                    pass
+                            with dpg.child_window(height=-1):
+                                dpg.add_text("", tag=DPG_WIDGETS.MODEL_INFO_TEXT)
+                with dpg.tab(label='Создать'):
+                    with dpg.child_window(height=-1):
+                        with dpg.group(horizontal=True):
+                            with dpg.table(row_background=True, width=300):
+                                dpg.add_table_column(label='Параметр')
+                                dpg.add_table_column(label='Значение')
+                                with dpg.table_row():
+                                    dpg.add_text('ширина')
+                                    dpg.add_input_float(default_value=2.5, step=0, width=-1)
+                                with dpg.table_row():
+                                    dpg.add_text('высота')
+                                    dpg.add_input_float(default_value=5, step=0, width=-1)
+                                with dpg.table_row():
+                                    dpg.add_text('элементов по X')
+                                    dpg.add_input_int(default_value=10, step=0,
+                                                    min_value=1, min_clamped=True,
+                                                    width=-1)
+                                with dpg.table_row():
+                                    dpg.add_text('элементов по Y')
+                                    dpg.add_input_int(default_value=10, step=0,
+                                                    min_value=1, min_clamped=True,
+                                                    width=-1)
+                            cw = dpg.add_child_window()
+                            dr = MeshDrawer(width=MESH_DRAW_AREA_WIDTH, height=MESH_DRAW_AREA_HEIGH, bg_color=(255, 0, 0))
+                            dr.sumbit(cw)
+                                
 
         # Блок работы с экспериментальными кривыми
         with dpg.tab(label='Экспериментальные кривые'):
@@ -334,6 +375,8 @@ with dpg.window(label="Example Window", width=600, height=600, tag='main'):
                 with dpg.group(horizontal=True):
                     dpg.add_button(label='Считать до совпадения с точностью', callback=run_until_converged)
                     dpg.add_input_int(label='%', default_value=5, width=150, tag=DPG_WIDGETS.CONVERGENCE_CRIT_INPUT)
+                    dpg.add_button(label='Стоп', user_data=False, tag=DPG_WIDGETS.STOP_BUTTON,
+                                   callback=stop_button_callback)
                 dpg.add_progress_bar(tag=DPG_WIDGETS.SOLUTION_PROGRESS, width=-1, height=20)
                 # with dpg.child_window(height=610):
                 with dpg.subplots(2, 2, width=-1, height=-1):

@@ -4,6 +4,7 @@ from libs.d3plot_reader.d3plot import D3plot
 from libs.d3plot_reader.filter_type import FilterType
 from libs.d3plot_reader.array_type import ArrayType
 import numpy as np
+from libs.ls_runner import LSRunner
 
 class TrueDiagrammCalculator:
     def __init__(self) -> None:
@@ -37,6 +38,7 @@ class TrueDiagrammCalculator:
         # результаты решения: [макс.пласт.деф: list[float], силы реакции: list[float]]
         self.solution_results: list = []
         # self.max_force_deflection = 1e6
+        self.frozen_points = 0
 
     @property
     def iteration(self):
@@ -53,6 +55,7 @@ class TrueDiagrammCalculator:
         if value==0:
             self.assign_initial_diag()
             self.solution_results = []
+            self.frozen_points = 0
 
     @property
     def working_dir(self):
@@ -85,11 +88,12 @@ class TrueDiagrammCalculator:
 
     @n_points.setter
     def n_points(self, value):
-        if value!=self._n_points:
+        if value != self._n_points:
             self._n_points = value
-            dt = self._exp_curves[0][-1] / (self.n_points-1)
-            self.dump_t = [i*dt for i in range(self.n_points)]
-            self.dump_dt = [dt]*(self.n_points)
+            if self._exp_curves:
+                dt = self._exp_curves[0][-1] / (self.n_points-1)
+                self.dump_t = [i*dt for i in range(self.n_points)]
+                self.dump_dt = [dt]*(self.n_points)
 
 
     def assign_material_props(self, rho: float, E: float, nu: float, s0: float, Et: float) -> None:
@@ -152,7 +156,9 @@ class TrueDiagrammCalculator:
                 v.append(vv)
                 f.append(ff)
         self.exp_curves = [t, v, f]
-
+        dt = self._exp_curves[0][-1] / (self.n_points - 1)
+        self.dump_t = [i * dt for i in range(self.n_points)]
+        self.dump_dt = [dt] * self.n_points
 
     def save_base_model(self):
         """
@@ -252,10 +258,9 @@ $#    lcid      sidr       sfa       sfo      offa      offo    dattyp     lcint
        101         0       1.0       1.0       0.0       0.0         0         0
 $#                a1                  o1
 """)
-            for t, dt in zip(*self.diag_0):
-                fout.write(f" {t:19g} {dt:19g}\n")
-            fout.write(f" {10:19g} {self.diag_0[1][-1]:19g}\n")
-
+            for e, s in zip(*self.diag_0):
+                fout.write(f" {e:19g} {s:19g}\n")
+            fout.write(f" {200:19g} {np.max(self.diag_0[1]):19g}\n")
             fout.write("*END\n")
 
     def parse_nodfor(self) -> list[list[float], list[float]]:
@@ -315,31 +320,76 @@ $#                a1                  o1
         f_exp = np.interp(self.dump_t, self.exp_curves[0], self.exp_curves[2])
         return np.abs((f_exp[1:]-self.solution_results[1][1:])/f_exp[1:]).max()*100
 
-    def correct_material_diagramm(self):
+    @property
+    def force_error(self):
+        if not self.solution_results:
+            return
+        f_exp = np.interp(self.dump_t, self.exp_curves[0], self.exp_curves[2])
+        return np.abs((f_exp[1:]-self.solution_results[1][1:])/f_exp[1:])*100
+
+    def _correct_material_diagramm(self):
         st = np.interp(self.solution_results[0], self.diag_0[0], self.diag_0[1])
         f_exp = np.interp(self.dump_t, self.exp_curves[0], self.exp_curves[2])
-        self.diag_0 = [[0], [1]]
-        for i in range(1, self.n_points):
-            self.diag_0[0].append(self.solution_results[0][i])
-            # if (np.abs((f_exp[i]-self.solution_results[1][i])/f_exp[i]))>0.05:
-            self.diag_0[1].append(st[i]*f_exp[i]/self.solution_results[1][i])
-            # else:
-            #     self.diag_0[1].append(st[i])
-        # e = np.linspace(0, self.solution_results[0][-1], self.n_points)
-        # self.dump_t = np.interp(e, self.solution_results[0], self.dump_t)
-        # self.dump_dt = np.diff(self.dump_t, 1)
+        first = True
+        for i in range(self.n_points):
+            if self.solution_results[0][i] == 0.0:
+                self.frozen_points += 1
+                continue
+            err = np.abs((f_exp[i]-self.solution_results[1][i])/f_exp[i])
+            if err <= 0.01 and i == self.frozen_points+1:
+                self.frozen_points += 1
+            # if f_error <= 0.10 and i == self.frozen_points+1:
+            #     self.frozen_points += 1
+            #     continue
+            if first:
+                new_diag = [
+                    [0.0],
+                    [st[i]*f_exp[i]/self.solution_results[1][i]],
+                ]
+                first = False
+            new_diag[0].append(self.solution_results[0][i])
+            new_diag[1].append(st[i]*f_exp[i]/self.solution_results[1][i])
+        self.diag_0 = new_diag
+
+    def correct_material_diagramm(self):
+        # mask = self.solution_results > 0
+        # n = 0
+        # for m in mask:
+        #     if not m:
+        #         break
+        #     n += 1
+        tc = self.dump_t
+        ep = self.solution_results[0]
+        Fc = self.solution_results[1]
+        te = self.exp_curves[0]
+        Fe = self.exp_curves[2]
+        eep = ep#np.linspace(0, np.max(ep), self.n_points)
+        sst = np.interp(eep, self.diag_0[0], self.diag_0[1])
+        tt = np.interp(eep, ep, tc)
+        Fcc = np.interp(eep, ep, Fc)
+        Fee = np.interp(tt, te, Fe)
+        self.diag_0[0] = eep
+        self.diag_0[1] = sst*Fee/Fcc
+        # mask1 = (self.diag_0[1] != np.inf) & (self.diag_0[1] != -np.inf)
+        # удаление дубликатов точек с нулевой пластической деформацией
+        # mask2 = self.diag_0[0] != 0
+        # mask = mask1 & mask2
+        self.make_plastic_part_monotonic()
 
     def run_calculation(self, ncpus=1):
+        
         if not os.path.exists(task_path := os.path.join(self.working_dir, 'base.k')):
             print(f'Не обнаружена задача {task_path}')
             return
-        with open(bat_path := os.path.join(self.working_dir, 'run.bat'), 'w') as bat_file:
-            bat_file.write(f"cd /d {self.working_dir}\n")
-            bat_file.write(f"{self.solver_path} i=base.k ncpus={ncpus}\n")
-        try:
-            os.system(bat_path)
-        except Exception:
-            print('Не удалось посчитать. Проверьте папку проекта.')
+        lr = LSRunner(self.solver_path, ncpus=ncpus)
+        lr.run_task(os.path.join(self.working_dir, 'base.k'))        
+        # with open(bat_path := os.path.join(self.working_dir, 'run.bat'), 'w') as bat_file:
+        #     bat_file.write(f"cd /d {self.working_dir}\n")
+        #     bat_file.write(f"{self.solver_path} i=base.k ncpus={ncpus}\n")
+        # try:
+        #     os.system(bat_path)
+        # except Exception:
+        #     print('Не удалось посчитать. Проверьте папку проекта.')
 
     @property
     def strain(self):
@@ -353,18 +403,35 @@ $#                a1                  o1
         if not self.diag_0:
             return []
         return [0] + list(self.diag_0[1])
+    
+    def make_plastic_part_monotonic(self):
+        mask = (self.diag_0[1] != np.inf) & (self.diag_0[1] != -np.inf)
+        x = self.diag_0[0][mask]
+        y = self.diag_0[1][mask]
+        x_unique = np.unique(x)
+        y_unique = []
+        for xx in x_unique:
+            idx = x == xx
+            y_unique.append(y[idx].max())
+        self.diag_0[0] = x_unique
+        self.diag_0[1] = y_unique
 
 if __name__=='__main__':
     calc = TrueDiagrammCalculator()
     calc.assign_model('../model/main.k')
     calc.working_dir = "d:/111/"
     calc.solver_path = 'run_dyna'
-    calc.n_points = 10
+    calc.n_points = 50
     calc.read_exp_curves('../model/exp_data.csv')
     calc.assign_material_props(7.8e-3, 200000, 0.28, 200, 1000)
     calc.save_base_model()
     calc.save_constant_part()
     calc.save_variable_part()
-    calc.run_calculation()
+    calc.run_calculation(ncpus=4)
     calc.proc_solution_results()
-    print(calc.solution_results)
+    # print(list(calc.dump_t)+calc.solution_results)
+    np.savetxt(
+        'sol_results.txt',
+        X=np.array([calc.dump_t]+calc.solution_results),
+        delimiter=',',
+    )

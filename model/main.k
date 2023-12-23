@@ -1,6 +1,8 @@
 $# LS-DYNA Keyword file created by LS-PrePost 4.2 (Beta) - 12Oct2014(09:00)
 $# Created on May-07-2015 (10:59:09)
 *KEYWORD
+*CONTROL_HOURGLASS
+
 *CONTROL_SHELL
 $#  wrpang     esort     irnxx    istupd    theory       bwc     miter      proj
  20.000000         0        -1         0         2         2         1         0
