@@ -69,7 +69,7 @@ def isSubSet(s1, s2, isSorted=False):
 def formatSetKeyword(data, num=1, kw='*SET_NODE_LIST'):
     n = len(data)
     if not n: return ""
-    rez = kw + '\n{:10d}\n'.format(num)
+    rez = '{:10d}\n'.format(num)
     fs = ("{:>10}" * 8 + "\n") * (n // 8)
     if n % 8:
         fs += "{:>10}" * (n % 8) + "\n"
@@ -583,10 +583,10 @@ class lsdyna_model:
         :param progress: Показывать прогресс выполнения длительных задач
         """
         self.kwds = defaultdict(list)
-        self.nodes: dict[int, dict[int,node]] | None = None
-        self.solids: dict[int, dict[int, element]] | None = None
-        self.shells: dict[int, dict[int, element]] | None = None
-        self.nodesets: dict[int, list[int]] | None = None
+        self.nodes: dict[int, dict[int,node]] = {}
+        self.solids: dict[int, dict[int, element]] = {}
+        self.shells: dict[int, dict[int, element]] = {}
+        self.nodesets: dict[int, list[int]] = {}
         self.progress = progress
         if fname:
             self.read_data(fname, procIncludes)
@@ -817,6 +817,12 @@ class lsdyna_model:
                 n += 1
             if nodes:
                 self.nodesets[set_number] = nodes
+
+    def nodesets_to_kwds(self):
+        for sn in self.nodesets:
+            self.kwds['*SET_NODE_LIST'].append(
+                formatSetKeyword(self.nodesets[sn], sn)
+            )
 
 
 if __name__=='__main__':

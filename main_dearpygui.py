@@ -6,54 +6,18 @@ from constants import *
 from libs.diag_calculator import TrueDiagrammCalculator
 from libs.mesh_drawer import MeshDrawer
 import threading
+from libs.base_model_lib import BaseLSmodel, ShellType
 
 calculator = TrueDiagrammCalculator()
 running = True
 
-# DPG widgets callbacks
-def draw_mesh(calculator: TrueDiagrammCalculator, dpg_draw_layer_tag: str):
-    k = 0.9 * min(MESH_DRAW_AREA_WIDTH / calculator.model_bbox.a,
-                  MESH_DRAW_AREA_HEIGH / calculator.model_bbox.b)
-    x_draw = lambda x: 0.05 * MESH_DRAW_AREA_WIDTH + k * (x - calculator.model_bbox.xmin)
-    y_draw = lambda y: 0.95 * MESH_DRAW_AREA_HEIGH - k * (y - calculator.model_bbox.ymin)
-    dpg.delete_item(dpg_draw_layer_tag, children_only=True)
-    for part in calculator.model.shells:
-        for sh in calculator.model.shells[part].values():
-            pnts = [
-                (x_draw(calculator.model.nodes[n].x), y_draw(calculator.model.nodes[n].y)) for n in sh.nodes
-            ]
-            pnts.append(pnts[0])
-            dpg.draw_polygon(pnts, fill=(255, 0, 0), color=(0, 0, 0), thickness=1, parent=dpg_draw_layer_tag)
-    if 1 in calculator.model.nodesets:
-        for n in calculator.model.nodesets[1]:
-            dpg.draw_circle(
-                center=(
-                    x_draw(calculator.model.nodes[n].x),
-                    y_draw(calculator.model.nodes[n].y),
-                ),
-                radius=3,
-                fill=(0, 255, 0),
-                color=(0, 0, 0),
-                thickness=1,
-                parent=dpg_draw_layer_tag
-            )
-    if 2 in calculator.model.nodesets:
-        for n in calculator.model.nodesets[2]:
-            x = x_draw(calculator.model.nodes[n].x)
-            y = y_draw(calculator.model.nodes[n].y)
-            dpg.draw_arrow(
-                p1=(x, y - 10),
-                p2=(x, y),
-                color=(0, 0, 255),
-                thickness=1,
-                parent=dpg_draw_layer_tag
-            )
 
+# DPG widgets callbacks
 def set_model_text_callback(file_name):
     if file_name:
         dpg.set_value(DPG_WIDGETS.MODEL_PATH_TEXT, file_name)
         calculator.assign_model(file_name)
-        draw_mesh(calculator, DPG_WIDGETS.MESH_DRAW_LAYER)
+        md.model = calculator.model
         model_info = repr(calculator.model) + repr(calculator.model_bbox)
         dpg.set_value(DPG_WIDGETS.MODEL_INFO_TEXT, model_info)
 
@@ -96,6 +60,7 @@ def choose_solver_btn_callback(sender, app_data, user_data):
     fd = dpgDirFileDialog(extensions=['exe'], callback=set_solver_path, height=590)
     fd.show()
 
+
 def set_workingdir(file_name):
     if not file_name:
         return
@@ -104,9 +69,11 @@ def set_workingdir(file_name):
     calculator.working_dir = file_name
     dpg.set_value(DPG_WIDGETS.WORK_DIR, file_name)
 
+
 def choose_workingdir_btn_callback(sender, app_data, user_data):
     fd = dpgDirFileDialog(dir_mode=True, callback=set_workingdir, height=590)
     fd.show()
+
 
 def solve_btn_callback(sender, app_data, user_data):
     iterations_count = 1 if user_data is None else user_data
@@ -139,7 +106,6 @@ def solve_btn_callback(sender, app_data, user_data):
             dpg.fit_axis_data(DPG_WIDGETS.PLOT_DIAG_X)
             dpg.fit_axis_data(DPG_WIDGETS.PLOT_DIAG_Y)
 
-
         dpg.configure_item(DPG_WIDGETS.LINE_DIAG, x=calculator.strain, y=calculator.stress)
         dpg.fit_axis_data(DPG_WIDGETS.PLOT_DIAG_X)
         dpg.fit_axis_data(DPG_WIDGETS.PLOT_DIAG_Y)
@@ -160,10 +126,10 @@ def solve_btn_callback(sender, app_data, user_data):
         )
         dpg.configure_item(
             DPG_WIDGETS.LINE_DEP,
-            x = calculator.dump_t[:-1],
-            y = [
-                (calculator.solution_results[0][i]-calculator.solution_results[0][i-1])/
-                (calculator.dump_t[i]-calculator.dump_t[i-1])
+            x=calculator.dump_t[:-1],
+            y=[
+                (calculator.solution_results[0][i] - calculator.solution_results[0][i - 1]) /
+                (calculator.dump_t[i] - calculator.dump_t[i - 1])
                 for i in range(1, calculator.n_points)
             ]
         )
@@ -175,12 +141,13 @@ def solve_btn_callback(sender, app_data, user_data):
                       f'Выполнено {calculator.iteration} итераций')
         data = dpg.get_value(DPG_WIDGETS.LINE_CONVERGENCE)
         dpg.configure_item(DPG_WIDGETS.LINE_CONVERGENCE,
-                           x = data[0] + [calculator.iteration],
-                           y = data[1] + [calculator.max_force_error]
+                           x=data[0] + [calculator.iteration],
+                           y=data[1] + [calculator.max_force_error]
                            )
         dpg.fit_axis_data(DPG_WIDGETS.PLOT_CONVERGENCE_X)
         dpg.fit_axis_data(DPG_WIDGETS.PLOT_CONVERGENCE_Y)
-        dpg.set_value(DPG_WIDGETS.SOLUTION_PROGRESS, (j+1)/iterations_count)
+        dpg.set_value(DPG_WIDGETS.SOLUTION_PROGRESS, (j + 1) / iterations_count)
+
 
 def run_solution_until_converged():
     crit = dpg.get_value(DPG_WIDGETS.CONVERGENCE_CRIT_INPUT)
@@ -190,16 +157,18 @@ def run_solution_until_converged():
             return
         solve_btn_callback(None, None, 1)
 
+
 def run_until_converged(sender, app_data, user_data):
     global running
     running = True
     t = threading.Thread(target=run_solution_until_converged, args=(), daemon=True)
     t.start()
-    
+
 
 def iteration_count_changed(sender, app_data, user_data):
     dpg.configure_item(DPG_WIDGETS.RUN_N_ITERATIONS_BTN, label=f'Выполнить {app_data} итераций')
     dpg.set_item_user_data(DPG_WIDGETS.RUN_N_ITERATIONS_BTN, app_data)
+
 
 def reset_btn_callback(sender, app_data, user_data):
     dpg.set_value(DPG_WIDGETS.ITERATIONS_COUNT_TEXT,
@@ -210,10 +179,34 @@ def reset_btn_callback(sender, app_data, user_data):
     dpg.configure_item(DPG_WIDGETS.LINE_CONVERGENCE, x=[], y=[])
     dpg.configure_item(DPG_WIDGETS.LINE_DEP, x=[], y=[])
 
+
 def stop_button_callback(sender, app_data, user_data):
     global running
     running = False
+
+
 # end DPG widgets callbasks
+
+
+def create_model_callback(sender, app_data, user_data):
+    w = dpg.get_value(DPG_WIDGETS.SAMPLE_WIDTH)
+    h = dpg.get_value(DPG_WIDGETS.SAMPLE_HEIGHT)
+    nx = dpg.get_value(DPG_WIDGETS.SAMPLE_NX)
+    ny = dpg.get_value(DPG_WIDGETS.SAMPLE_NY)
+    match dpg.get_value(DPG_WIDGETS.TASK_TYPE):
+        case 'Плоское напряжение':
+            task_type = ShellType.plane_stress
+        case 'Плоская деформация':
+            task_type = ShellType.plane_strain
+        case 'Осесимм. (по площади)':
+            task_type = ShellType.axisymmetric_area
+        case _:
+            task_type = ShellType.axisymmetric_volume
+    model = BaseLSmodel(etype=task_type)
+    model.create_mesh(width=w, height=h, nx=nx, ny=ny)
+    calculator.model = model
+    calculator.model_path = ''
+    dr.model = model
 
 
 dpg.create_context()
@@ -230,6 +223,55 @@ with dpg.window(label="Example Window", width=600, height=600, tag='main'):
         # Блок виджетов выбора базовой модели
         with dpg.tab(label="Базовая модель"):
             with dpg.tab_bar():
+                with dpg.tab(label='Создать'):
+                    with dpg.child_window(height=-1):
+                        with dpg.group(horizontal=True):
+                            with dpg.group():
+                                with dpg.table(row_background=True, width=300):
+                                    dpg.add_table_column(label='Параметр')
+                                    dpg.add_table_column(label='Значение')
+                                    with dpg.table_row():
+                                        dpg.add_text('ширина')
+                                        dpg.add_input_float(default_value=2.5, step=0, width=-1,
+                                                            tag=DPG_WIDGETS.SAMPLE_WIDTH)
+                                    with dpg.table_row():
+                                        dpg.add_text('высота')
+                                        dpg.add_input_float(default_value=5, step=0, width=-1,
+                                                            tag=DPG_WIDGETS.SAMPLE_HEIGHT)
+                                    with dpg.table_row():
+                                        dpg.add_text('элементов по X')
+                                        dpg.add_input_int(
+                                            default_value=10, step=0,
+                                            min_value=1, min_clamped=True,
+                                            width=-1,
+                                            tag=DPG_WIDGETS.SAMPLE_NX,
+                                        )
+                                    with dpg.table_row():
+                                        dpg.add_text('элементов по Y')
+                                        dpg.add_input_int(
+                                            default_value=10, step=0,
+                                            min_value=1, min_clamped=True,
+                                            width=-1,
+                                            tag=DPG_WIDGETS.SAMPLE_NY,
+                                        )
+                                dpg.add_button(label='Создать', callback=create_model_callback)
+                                with dpg.child_window(width=300):
+                                    dpg.add_text('Тип задачи:')
+                                    dpg.add_radio_button(
+                                        items=[
+                                            'Плоское напряжение',
+                                            'Плоская деформация',
+                                            'Осесимм. (по площади)',
+                                            'Осесимм. (по объему)',
+                                        ],
+                                        horizontal=False,
+                                        tag=DPG_WIDGETS.TASK_TYPE,
+                                        default_value='Осесимм. (по объему)',
+                                    )
+                            cw = dpg.add_child_window()
+                            dr = MeshDrawer(width=MESH_DRAW_AREA_WIDTH, height=MESH_DRAW_AREA_HEIGH,
+                                            bg_color=(255, 255, 255))
+                            dr.sumbit(cw)
                 with dpg.tab(label='Открыть'):
                     with dpg.child_window(height=-1):
                         with dpg.child_window(height=130):
@@ -240,43 +282,11 @@ with dpg.window(label="Example Window", width=600, height=600, tag='main'):
                                 dpg.add_input_text(readonly=True, tag=DPG_WIDGETS.MODEL_PATH_TEXT, width=-110)
                                 dpg.add_button(label="Открыть", width=100, callback=chose_model_btn_callback)
                         with dpg.group(horizontal=True):
-                            with dpg.drawlist(width=MESH_DRAW_AREA_WIDTH, height=MESH_DRAW_AREA_HEIGH):
-                                with dpg.draw_layer(tag=DPG_WIDGETS.MESH_DRAW_BACKGROUND):
-                                    dpg.draw_rectangle(
-                                        pmin=(0, 0),
-                                        pmax=(MESH_DRAW_AREA_WIDTH, MESH_DRAW_AREA_HEIGH),
-                                        fill=(255, 255, 255)
-                                    )
-                                with dpg.draw_layer(tag=DPG_WIDGETS.MESH_DRAW_LAYER):
-                                    pass
+                            with dpg.child_window(height=-1, width=MESH_DRAW_AREA_WIDTH + 2) as cw:
+                                md = MeshDrawer(MESH_DRAW_AREA_WIDTH, MESH_DRAW_AREA_HEIGH)
+                                md.sumbit(cw)
                             with dpg.child_window(height=-1):
                                 dpg.add_text("", tag=DPG_WIDGETS.MODEL_INFO_TEXT)
-                with dpg.tab(label='Создать'):
-                    with dpg.child_window(height=-1):
-                        with dpg.group(horizontal=True):
-                            with dpg.table(row_background=True, width=300):
-                                dpg.add_table_column(label='Параметр')
-                                dpg.add_table_column(label='Значение')
-                                with dpg.table_row():
-                                    dpg.add_text('ширина')
-                                    dpg.add_input_float(default_value=2.5, step=0, width=-1)
-                                with dpg.table_row():
-                                    dpg.add_text('высота')
-                                    dpg.add_input_float(default_value=5, step=0, width=-1)
-                                with dpg.table_row():
-                                    dpg.add_text('элементов по X')
-                                    dpg.add_input_int(default_value=10, step=0,
-                                                    min_value=1, min_clamped=True,
-                                                    width=-1)
-                                with dpg.table_row():
-                                    dpg.add_text('элементов по Y')
-                                    dpg.add_input_int(default_value=10, step=0,
-                                                    min_value=1, min_clamped=True,
-                                                    width=-1)
-                            cw = dpg.add_child_window()
-                            dr = MeshDrawer(width=MESH_DRAW_AREA_WIDTH, height=MESH_DRAW_AREA_HEIGH, bg_color=(255, 0, 0))
-                            dr.sumbit(cw)
-                                
 
         # Блок работы с экспериментальными кривыми
         with dpg.tab(label='Экспериментальные кривые'):
@@ -333,7 +343,7 @@ with dpg.window(label="Example Window", width=600, height=600, tag='main'):
                         with dpg.table_row():
                             dpg.add_text("модуль Юнга")
                             dpg.add_input_float(default_value=200000, width=-1,
-                                                tag = DPG_WIDGETS.MAT_E_INPUT)
+                                                tag=DPG_WIDGETS.MAT_E_INPUT)
                             dpg.add_text("коэффициент Пуассона")
                             dpg.add_input_float(default_value=0.28, width=-1,
                                                 tag=DPG_WIDGETS.MAT_NU_INPUT)
@@ -348,14 +358,7 @@ with dpg.window(label="Example Window", width=600, height=600, tag='main'):
                     with dpg.group(horizontal=True):
                         dpg.add_text("Число точек на кривой деформирования:")
                         dpg.add_input_int(default_value=50, tag=DPG_WIDGETS.NUM_POINTS_INPUT, width=-1,
-                                           min_value=10, max_value=1000)
-                with dpg.child_window(height=100):
-                    dpg.add_text('Тип задачи:')
-                    dpg.add_radio_button(
-                        items=['Осесимметричная', 'Плоская', 'Трехмерная'],
-                        horizontal=True,
-                        tag=DPG_WIDGETS.TASK_TYPE,
-                    )
+                                          min_value=10, max_value=1000)
 
         # Блок настройки решения
         with dpg.tab(label='Решение'):

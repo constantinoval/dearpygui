@@ -5,6 +5,17 @@ from libs.d3plot_reader.filter_type import FilterType
 from libs.d3plot_reader.array_type import ArrayType
 import numpy as np
 from libs.ls_runner import LSRunner
+import logging
+from glob import glob
+
+log = logging.getLogger()
+
+logging.basicConfig(
+    filename='calculator.log',
+    filemode='w',
+    level=logging.DEBUG,
+    format='',
+)
 
 class TrueDiagrammCalculator:
     def __init__(self) -> None:
@@ -15,7 +26,7 @@ class TrueDiagrammCalculator:
         # путь к рабочей директории проекта
         self._working_dir: str = os.path.join(os.path.abspath(os.curdir), "solution")
         # входная модель ls-dyna
-        self.model: lsdyna_model | None = None
+        self._model: lsdyna_model | None = None
         # размер модели
         self.model_bbox: boundBox | None = None
         # массив с экспериментальными кривыми [время: list[float], скорость: list[float], сила: list[float]]
@@ -39,6 +50,16 @@ class TrueDiagrammCalculator:
         self.solution_results: list = []
         # self.max_force_deflection = 1e6
         self.frozen_points = 0
+
+    @property
+    def model(self) -> lsdyna_model | None:
+        return self._model
+
+    @model.setter
+    def model(self, value: lsdyna_model):
+        self._model = value
+        self._model.proceed_node_sets()
+        self.model_bbox = self._model.bbox
 
     @property
     def iteration(self):
@@ -127,8 +148,6 @@ class TrueDiagrammCalculator:
             print(f'Чтение сеточной модели из файла {model_path}...')
             self.model_path = model_path
             self.model = lsdyna_model(model_path, procIncludes=True)
-            self.model_bbox = self.model.bbox
-            self.model.proceed_node_sets()
         else:
             print(f'Файл {model_path} не найден')
 
@@ -300,18 +319,24 @@ $#                a1                  o1
             sol_path,
             state_array_filter=[
                 ArrayType.element_shell_effective_plastic_strain,
-                'timesteps',
+                ArrayType.global_timesteps,
             ]
         )
         mask = d3plot.get_part_filter(filter_type=FilterType.SHELL, part_ids=[1])
         pstrain = d3plot.arrays[ArrayType.element_shell_effective_plastic_strain][:, mask]
-        times1 = d3plot.arrays['timesteps']
+        times1 = d3plot.arrays[ArrayType.global_timesteps]
+        # if len(times1)>(self.n_points*1.5):
+        #     times1 = times1[::2]
+        #     pstrain = pstrain[::2]
         maxep = np.max(np.max(pstrain, axis=1), axis=1)
         times2, forces = self.parse_nodfor()
         self.solution_results = [
             np.interp(self.dump_t, times1, maxep),
             np.interp(self.dump_t, times2, forces),
         ]
+        log.debug(f'iteration={self.iteration}')
+        log.debug(f'results={self.solution_results}')
+        log.debug(f'time={self.dump_t}')
 
     @property
     def max_force_error(self):
@@ -352,28 +377,18 @@ $#                a1                  o1
         self.diag_0 = new_diag
 
     def correct_material_diagramm(self):
-        # mask = self.solution_results > 0
-        # n = 0
-        # for m in mask:
-        #     if not m:
-        #         break
-        #     n += 1
-        tc = self.dump_t
         ep = self.solution_results[0]
         Fc = self.solution_results[1]
         te = self.exp_curves[0]
-        Fe = self.exp_curves[2]
-        eep = ep#np.linspace(0, np.max(ep), self.n_points)
-        sst = np.interp(eep, self.diag_0[0], self.diag_0[1])
-        tt = np.interp(eep, ep, tc)
-        Fcc = np.interp(eep, ep, Fc)
-        Fee = np.interp(tt, te, Fe)
-        self.diag_0[0] = eep
-        self.diag_0[1] = sst*Fee/Fcc
-        # mask1 = (self.diag_0[1] != np.inf) & (self.diag_0[1] != -np.inf)
+        Fe = np.interp(self.dump_t, te, self.exp_curves[2])
+        st = np.interp(ep, self.diag_0[0], self.diag_0[1])
+        # tt = np.interp(eep, ep, tc)
+        # Fcc = np.interp(eep, ep, Fc)
+        # Fee = np.interp(tt, te, Fe)
+        k = Fe/Fc
+        self.diag_0[0] = ep
+        self.diag_0[1] = st*Fe/Fc
         # удаление дубликатов точек с нулевой пластической деформацией
-        # mask2 = self.diag_0[0] != 0
-        # mask = mask1 & mask2
         self.make_plastic_part_monotonic()
 
     def run_calculation(self, ncpus=1):
@@ -381,6 +396,8 @@ $#                a1                  o1
         if not os.path.exists(task_path := os.path.join(self.working_dir, 'base.k')):
             print(f'Не обнаружена задача {task_path}')
             return
+        for f in glob(os.path.join(self.working_dir, 'd3plot*')):
+            os.remove(f)
         lr = LSRunner(self.solver_path, ncpus=ncpus)
         lr.run_task(os.path.join(self.working_dir, 'base.k'))        
         # with open(bat_path := os.path.join(self.working_dir, 'run.bat'), 'w') as bat_file:
@@ -411,27 +428,28 @@ $#                a1                  o1
         x_unique = np.unique(x)
         y_unique = []
         for xx in x_unique:
-            idx = x == xx
+            idx = (np.abs(x - xx)<=1e-4)
             y_unique.append(y[idx].max())
         self.diag_0[0] = x_unique
         self.diag_0[1] = y_unique
 
 if __name__=='__main__':
     calc = TrueDiagrammCalculator()
-    calc.assign_model('../model/main.k')
+    # calc.assign_model('../model/main.k')
     calc.working_dir = "d:/111/"
-    calc.solver_path = 'run_dyna'
+    # calc.solver_path = 'run_dyna'
     calc.n_points = 50
-    calc.read_exp_curves('../model/exp_data.csv')
-    calc.assign_material_props(7.8e-3, 200000, 0.28, 200, 1000)
-    calc.save_base_model()
-    calc.save_constant_part()
-    calc.save_variable_part()
-    calc.run_calculation(ncpus=4)
+    calc.read_exp_curves('../model/tension/exp_data.csv')
+    # calc.assign_material_props(7.8e-3, 200000, 0.28, 200, 1000)
+    # calc.save_base_model()
+    # calc.save_constant_part()
+    # calc.save_variable_part()
+    # calc.run_calculation(ncpus=4)
     calc.proc_solution_results()
+    # print(calc.solution_results[0])
     # print(list(calc.dump_t)+calc.solution_results)
-    np.savetxt(
-        'sol_results.txt',
-        X=np.array([calc.dump_t]+calc.solution_results),
-        delimiter=',',
-    )
+    # np.savetxt(
+    #     'sol_results.txt',
+    #     X=np.array([calc.dump_t]+calc.solution_results),
+    #     delimiter=',',
+    # )

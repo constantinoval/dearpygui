@@ -1,4 +1,4 @@
-from math import ceil
+from math import floor
 import os
 from pathlib import Path
 import tempfile as tfile
@@ -34,7 +34,7 @@ class LSRunner:
                 if termination_time == 0:
                     continue
                 current_time = float(line.split()[2])
-                progress = ceil(current_time/termination_time*self.progress_width)
+                progress = floor(current_time/termination_time*self.progress_width)
                 print('\r['+'#'*progress + '-'*(self.progress_width-progress)+
                       f'] {progress/self.progress_width*100: 5.0f}%' + f" cur_time={current_time: 7.3g}, tot_time={termination_time: 7.3g}", end='')
                 continue
