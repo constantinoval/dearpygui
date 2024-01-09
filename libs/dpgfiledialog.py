@@ -45,12 +45,16 @@ class dpgDirFileDialog:
         return dirs, files
 
     def select_item(self, sender, app_data, user_data):
-        if self.selected_item != -1:
+        if self.selected_item != -1 and self.selected_item != user_data[0]:
             dpg.unhighlight_table_row(self.path_table, self.selected_item)
-        dpg.highlight_table_row(self.path_table, user_data[0], color=(0, 164, 230))
+        if user_data[0] != self.selected_item:
+            dpg.highlight_table_row(self.path_table, user_data[0], color=(0, 164, 230))
         self.selected_item = user_data[0]
         self.selected_file = user_data[1]
-        dpg.set_value('current file', self.selected_file)
+        try:
+            dpg.set_value('current file', self.selected_file)
+        except:
+            pass
         if self.save_mode and os.path.isfile(self.selected_file):
             dpg.set_value(self.new_file_name, self.selected_file.split(os.path.sep)[-1])
 
@@ -164,6 +168,8 @@ class dpgDirFileDialog:
                 dpg.add_button(label=' X ', callback=self.cancel_new_dir_callback)
             dpg.add_separator()
             with dpg.table(
+                resizable=True,
+                policy=dpg.mvTable_SizingStretchProp,
                 row_background=True,
                 borders_outerH=True,
                 borders_outerV=True,

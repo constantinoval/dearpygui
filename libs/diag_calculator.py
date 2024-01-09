@@ -301,7 +301,7 @@ $#                a1                  o1
                 if line == " nodal group output number  1\n":
                     while not line.startswith("              xtotal="):
                         line = next(fin)
-                    forces.append(float(line.strip().split()[3]))
+                    forces.append(float(line.strip().split()[3])*2*np.pi)
         return times, forces
 
 
@@ -422,9 +422,15 @@ $#                a1                  o1
         return [0] + list(self.diag_0[1])
     
     def make_plastic_part_monotonic(self):
+        i = 0
+        while self.diag_0[0][i] == 0:
+            i += 1
+        self.diag_0[0] = self.diag_0[0][i-1:]
+        self.diag_0[1] = self.diag_0[1][i-1:]
         mask = (self.diag_0[1] != np.inf) & (self.diag_0[1] != -np.inf)
         x = self.diag_0[0][mask]
         y = self.diag_0[1][mask]
+        x = np.round(x, 4)
         x_unique = np.unique(x)
         y_unique = []
         for xx in x_unique:

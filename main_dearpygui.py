@@ -7,6 +7,7 @@ from libs.diag_calculator import TrueDiagrammCalculator
 from libs.mesh_drawer import MeshDrawer
 import threading
 from libs.base_model_lib import BaseLSmodel, ShellType
+from get_db_data_dialog import GetDBdataDialog
 
 calculator = TrueDiagrammCalculator()
 running = True
@@ -208,6 +209,31 @@ def create_model_callback(sender, app_data, user_data):
     calculator.model_path = ''
     dr.model = model
 
+def set_get_data_mode(sender, app_data, user_data):
+    dpg.configure_item('main', show=False)
+    dpg.set_primary_window('main', False)
+    dpg.configure_item(get_data_dialog, show=True)
+    dpg.set_primary_window(get_data_dialog, True)
+
+def get_data_result(result: dict):
+    dpg.configure_item('main', show=True)
+    dpg.set_primary_window('main', True)
+    dpg.configure_item(get_data_dialog, show=False)
+    dpg.set_primary_window(get_data_dialog, False)
+    if result:
+        dpg.set_value(DPG_WIDGETS.SAMPLE_WIDTH, result['r'])
+        dpg.set_value(DPG_WIDGETS.SAMPLE_HEIGHT, result['l'])
+        dpg.set_value(DPG_WIDGETS.SAMPLE_NX, 10)
+        dpg.set_value(DPG_WIDGETS.SAMPLE_NY, int(result['l']/(result['r']/10)))
+        create_model_callback(None, None, None)
+        dpg.configure_item(DPG_WIDGETS.EXP_V_PLOT, x=result['t'], y=result['v'])
+        dpg.configure_item(DPG_WIDGETS.EXP_F_PLOT, x=result['t'], y=result['f'])
+        dpg.fit_axis_data(DPG_WIDGETS.PLOT_EXP_V_X)
+        dpg.fit_axis_data(DPG_WIDGETS.PLOT_EXP_V_Y)
+        dpg.fit_axis_data(DPG_WIDGETS.PLOT_EXP_F_X)
+        dpg.fit_axis_data(DPG_WIDGETS.PLOT_EXP_F_Y)
+        calculator.exp_curves = [result['t'], result['v'], result['f']]
+
 
 dpg.create_context()
 dpg.create_viewport(title="Numerical true stress strain diagramm determination",
@@ -216,9 +242,18 @@ dpg.setup_dearpygui()
 
 # ГПИ приложения
 with dpg.window(label="Example Window", width=600, height=600, tag='main'):
+    # Основное меню
     with dpg.menu_bar():
-        with dpg.menu(label="File"):
-            dpg.add_menu_item(label='Save')
+        with dpg.menu(label="Файл"):
+            dpg.add_menu_item(label='Сохранить проект')
+            dpg.add_menu_item(label='Загрузить проект')
+            dpg.add_separator()
+            dpg.add_menu_item(label='Выход', callback=dpg.stop_dearpygui)
+        with dpg.menu(label='Данные'):
+            dpg.add_menu_item(
+                label='Получить из БД',
+                callback=set_get_data_mode,
+            )
     with dpg.tab_bar():
         # Блок виджетов выбора базовой модели
         with dpg.tab(label="Базовая модель"):
@@ -271,7 +306,7 @@ with dpg.window(label="Example Window", width=600, height=600, tag='main'):
                             cw = dpg.add_child_window()
                             dr = MeshDrawer(width=MESH_DRAW_AREA_WIDTH, height=MESH_DRAW_AREA_HEIGH,
                                             bg_color=(255, 255, 255))
-                            dr.sumbit(cw)
+                            dr.submit(cw)
                 with dpg.tab(label='Открыть'):
                     with dpg.child_window(height=-1):
                         with dpg.child_window(height=130):
@@ -284,7 +319,7 @@ with dpg.window(label="Example Window", width=600, height=600, tag='main'):
                         with dpg.group(horizontal=True):
                             with dpg.child_window(height=-1, width=MESH_DRAW_AREA_WIDTH + 2) as cw:
                                 md = MeshDrawer(MESH_DRAW_AREA_WIDTH, MESH_DRAW_AREA_HEIGH)
-                                md.sumbit(cw)
+                                md.submit(cw)
                             with dpg.child_window(height=-1):
                                 dpg.add_text("", tag=DPG_WIDGETS.MODEL_INFO_TEXT)
 
@@ -380,6 +415,8 @@ with dpg.window(label="Example Window", width=600, height=600, tag='main'):
                     dpg.add_input_int(label='%', default_value=5, width=150, tag=DPG_WIDGETS.CONVERGENCE_CRIT_INPUT)
                     dpg.add_button(label='Стоп', user_data=False, tag=DPG_WIDGETS.STOP_BUTTON,
                                    callback=stop_button_callback)
+                    dpg.add_spacer(width=50)
+                    dpg.add_button(label='Сохранить диаграмму')
                 dpg.add_progress_bar(tag=DPG_WIDGETS.SOLUTION_PROGRESS, width=-1, height=20)
                 # with dpg.child_window(height=610):
                 with dpg.subplots(2, 2, width=-1, height=-1):
@@ -411,6 +448,10 @@ with dpg.window(label="Example Window", width=600, height=600, tag='main'):
                         dpg.add_line_series([], [], tag=DPG_WIDGETS.LINE_CONVERGENCE,
                                             parent=DPG_WIDGETS.PLOT_CONVERGENCE_Y)
 
+with dpg.window(show=False) as get_data_dialog:
+    gd = GetDBdataDialog(callback=get_data_result, width=-1, height=-1)
+    gd.submit(parent=get_data_dialog)
+
 # Настройка кириллического шрифта
 with dpg.font_registry():
     with dpg.font(file="./XO_Caliburn_Nu.ttf", size=18) as font1:
@@ -419,6 +460,8 @@ dpg.bind_font(font1)
 
 # Применение стилей и цветов
 with dpg.theme() as global_theme:
+    with dpg.theme_component(dpg.mvMenuItem):
+        dpg.add_theme_style(dpg.mvStyleVar_ItemSpacing, y=10)
     with dpg.theme_component(dpg.mvAll):
         dpg.add_theme_style(dpg.mvStyleVar_FramePadding, x=20, y=10)
         dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, x=5)

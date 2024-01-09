@@ -39,7 +39,7 @@ class MeshDrawer:
         self.draw_mesh()
         self.draw_bcs()
     
-    def sumbit(self, parent):
+    def submit(self, parent):
         dpg.push_container_stack(parent)
         dpg.unstage(self.id)
         dpg.pop_container_stack()
@@ -93,7 +93,7 @@ if __name__=="__main__":
     with dpg.window(label="Example Window", width=800, height=600, tag='main'):
         with dpg.child_window() as w:
             drawer = MeshDrawer(width=500, height=500)
-            drawer.sumbit(parent=w)
+            drawer.submit(parent=w)
             mesh = lsdyna_model('../model/indent_sph_ak4/sph.k')
             drawer.model = mesh
     dpg.show_viewport()

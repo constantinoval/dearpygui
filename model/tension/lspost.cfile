@@ -1,0 +1,20 @@
+$# LS-PrePost command file created by LS-PrePost(R) V4.10.5-23Jun2023 -64bit-Window
+$# Created on Jan-7-2024 (18:08:27)
+openc keyword "F:\Work\NIIM\projects\truediag_dearpygui\model\tension\solid.k"
+Message 1
+Message 0
+ident select 1
+genselect target node
+genselect node add node 3/0 
+genselect node add node 72/0 
+genselect node add node 261/0 
+ident select 0
+find element 1 
+ident select 1
+clearid all;
+genselect target node
+genselect node add node 411/0 
+genselect node add node 122/0 
+genselect node add node 1/0 
+genselect node add node 21/0 
+ident select 0
