@@ -159,7 +159,7 @@ class GetDBdataDialog:
             result['l'] = float(dpg.get_value(self.l_value))
             t, v = dpg.get_value(self.v_line)
             t, f = dpg.get_value(self.f_line)
-            result['t'] = [(tt-t[0])*1000 for tt in t]
+            result['t'] = [(tt-t[0]) for tt in t]
             result['v'] = v
             result['f'] = [-ff for ff in f]
         if self.callback:
